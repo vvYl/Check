@@ -11,7 +11,7 @@ def main():
     # 加载数据
     epsilon_values = [0.5,1,1.5,2.0,2.5,3.0,3.5,4.0]
     rmr = 0.2  # malicious/honest
-    t = 0.15 #fb
+    t = 0.15
     # ratio:m:恶意用户数量 s：恶意目标数量 r：投毒真实用户 h：允许存在一定的真实边
     # 使用 fsolve 求解方程
     r_initial_guess = 0  # 设定初始猜测值
@@ -23,8 +23,8 @@ def main():
     for epsilon in epsilon_values:
         # 设置运行次数
         print(f"Running experiment with epsilon = {epsilon}")
-        data = Data(dataname='facebook_combined', limit=88243)
-        # data = Data(dataname='lastfm', limit=27806)
+        # data = Data(dataname='facebook_combined', limit=88243)
+        data = Data(dataname='lastfm', limit=27806)
         cor = []
         sou = []
         pre = []
@@ -42,22 +42,14 @@ def main():
             poison_data = Poison_Aggregate(data, epsilon, type="input", ratio=[m, s, r, 0.001], protocol='check')
             # poison_data = Poison_Aggregate(data, epsilon, type="input", ratio=[m, s, r, 0.001], protocol='hybrid',c=0.3, delta=0.0000001)
             # poison_data = Poison_Aggregate(data, epsilon, type="output", ratio=[m, s, r, 0.001], protocol='hybrid', c=0.3,delta=0.0000001)
-            results, results_Imola = poison_data.PA()
+            results= poison_data.PA()
             correctness, soundness, fnr, fpr, precision, recall, f1_score = results
             cor.append(correctness)
             sou.append(soundness)
             pre.append(precision)
             rec.append(recall)
             f1.append(f1_score)
-            correctness, soundness, fnr, fpr, precision, recall, f1_score = results_Imola
-            cor_I.append(correctness)
-            sou_I.append(soundness)
-            pre_I.append(precision)
-            rec_I.append(recall)
-            f1_I.append(f1_score)
         print(f"Ours ave-correctness, soundness: {safe_mean(cor), safe_mean(sou), safe_mean(pre), safe_mean(rec), safe_mean(f1)}")
-        print(
-            f"Imola's ave-correctness, soundness: {safe_mean(cor_I), safe_mean(sou_I), safe_mean(pre_I), safe_mean(rec_I), safe_mean(f1_I)}")
 
 
 def safe_mean(data):

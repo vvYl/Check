@@ -23,15 +23,10 @@ class Poison_Aggregate:
             perturbed_data, perturbed_degree = self.perturb()
         else:
             raise ValueError("Unsupported protocol!")
-        perturbed_data_t = copy.deepcopy(perturbed_data)
-        perturbed_degree_t = copy.deepcopy(perturbed_degree)
-        results_Imola =[]
         est_degrees, valid_indices, invalid_indices = self.run_protocol(perturbed_data, perturbed_degree)
         results = self.evaluate(est_degrees, valid_indices, invalid_indices)
-        est_degrees, valid_indices, invalid_indices = self.run_protocol_t(perturbed_data_t, perturbed_degree_t)
-        results_Imola = self.evaluate(est_degrees, valid_indices, invalid_indices)
 
-        return results, results_Imola
+        return results
 
     def perturb(self):
         n = len(self.data)
@@ -91,182 +86,6 @@ class Poison_Aggregate:
         else:
             raise ValueError("Unsupported protocol!")
 
-    def run_protocol_t(self, perturbed_data, perturbed_degree):
-        if self.protocol == 'check':
-            return self.deg_rr_check_t(perturbed_data)
-        elif self.protocol == 'hybrid':
-            return self.deg_hybrid_Imola(perturbed_data, perturbed_degree)
-        else:
-            raise ValueError("Unsupported protocol!")
-
-    def run_protocol_Imola(self, perturbed_data, perturbed_degree):
-        if self.protocol == 'check':
-            return self.deg_rr_check_Imola(perturbed_data)
-        elif self.protocol == 'hybrid':
-            return self.deg_hybrid_Imola(perturbed_data, perturbed_degree)
-        else:
-            raise ValueError("Unsupported protocol!")
-
-    def compute_tau_Imola(self, r, m, n, rho, delta, attack_type="input"):
-        """
-        计算阈值 tau。
-        :param m: 恶意用户数量
-        :param n: 总用户数量
-        :param rho: 隐私参数
-        :param delta: 控制误差范围的参数
-        :param attack_type: 攻击类型，"input" 或 "output"
-        :return: 计算得到的阈值 tau
-        """
-        if attack_type == "input":
-            tau = m * (1 - 2 * rho) + np.sqrt(m * np.log(4 / delta)) + np.sqrt(3 * n * rho * np.log(4 / delta))
-            # tau = n*r*(2*rho-1)**2/2
-        elif attack_type == "output":
-            tau = m + np.sqrt(3 * n * rho * np.log(2 / delta))
-        else:
-            raise ValueError("Unsupported attack type! Use 'input' or 'response'.")
-        return tau
-
-    def compute_tau_lap_Imola(self, r, m, n, rho, eps_d, delta, attack_type):
-        """
-        计算阈值 tau。
-        :param m: 恶意用户数量
-        :param n: 总用户数量
-        :param rho: 隐私参数
-        :param delta: 控制误差范围的参数
-        :param attack_type: 攻击类型，"input" 或 "output"
-        :return: 计算得到的阈值 tau
-        """
-        # _,_,r,_ =self.ratio
-        if attack_type == "input":
-            tau = m * (1 - 2 * rho) + np.sqrt(m * np.log(8 / delta)) + np.sqrt(3 * n * rho * np.log(8 / delta))
-
-        elif attack_type == "output":
-            tau = m + np.sqrt(3 * n * rho * np.log(4 / delta))
-
-        else:
-            raise ValueError("Unsupported attack type! Use 'input' or 'response'.")
-        return tau
-    def deg_rr_check_Imola(self, perturbed_data):
-        """
-        主函数：先进行度数估计，计算最大度数 d_m，并动态调整 r 和 \tau，
-        直至没有超过阈值的节点。
-
-        :param eps: 隐私预算 epsilon
-        :param delta: 检测的失败概率
-        :return: 最终的估计度数列表
-        """
-        rho = 1 / (1 + np.exp(self.epsilon))  # 计算隐私参数 rho
-
-        est_degrees, valid_indices, invalid_indices = self.compute_estimated_degrees_Imola(perturbed_data, rho)
-
-        # print("迭代完成，所有节点均满足一致性检查。")
-        return est_degrees, valid_indices, invalid_indices
-
-    def deg_hybrid_Imola(self, perturbed_data, perturbed_degree):
-        """
-        主函数：先进行度数估计，计算最大度数 d_m，并动态调整 r 和 \tau，
-        直至没有超过阈值的节点。
-
-        :param eps: 隐私预算 epsilon
-        :param delta: 检测的失败概率
-        :return: 最终的估计度数列表
-        """
-        n = len(self.data)  # 用户总数
-        eps_a = self.epsilon*(1-self.c)
-        rho = 1 / (1 + np.exp(eps_a))  # 计算隐私参数 rho
-        eps_d = self.epsilon * self.c
-
-        perturbed_degree = torch.tensor(perturbed_degree, dtype=torch.float32, device=perturbed_data.device)
-        est_degrees, valid_indices, invalid_indices = self.compute_estimated_degrees_hybrid_Imola(perturbed_data,
-                                                                                            perturbed_degree, rho,
-                                                                                            eps_d, self.delta)
-
-        # print("迭代完成，所有节点均满足一致性检查。")
-        return est_degrees, valid_indices, invalid_indices
-
-    def compute_estimated_degrees_hybrid_Imola(self, perturbed_data, perturbed_degree, rho, eps_d, delta):
-        """
-        估计度数并进行一致性检查。
-
-        :param perturbed_data: 扰动后的邻接矩阵 (torch.Tensor)
-        :param rho: 隐私参数相关值
-        :param tau: 阈值（首次运行时为 None）
-        :return: 估计的度数列表，符合/不符合一致性检查的节点索引
-        """
-        N = perturbed_data.shape[0]
-        est_degrees_full = torch.ones(perturbed_data.shape[0], dtype=torch.float32, device=perturbed_data.device)
-        valid_indices_full = torch.ones(perturbed_data.shape[0], dtype=torch.bool, device=perturbed_data.device)
-        invalid_indices_full = torch.zeros(perturbed_data.shape[0], dtype=torch.bool, device=perturbed_data.device)
-
-        rows_to_remove = torch.any(torch.isnan(perturbed_data), dim=1)
-        perturbed_data = perturbed_data[~rows_to_remove, :]
-        perturbed_data = perturbed_data[:, ~rows_to_remove]
-        perturbed_degree = perturbed_degree[~rows_to_remove]
-        n = perturbed_data.shape[0]  # 更新矩阵大小
-
-        # 使用矩阵运算计算 r_11、r_01 和 r_10
-        r_11 = torch.sum(perturbed_data * perturbed_data.T, dim=1)
-        r_01 = torch.sum((1 - perturbed_data) * perturbed_data.T, dim=1)
-        r_10 = torch.sum(perturbed_data * (1 - perturbed_data.T), dim=1)
-
-        # 初始化估计度数列表
-        est_degrees = (r_11 - rho ** 2 * (n - 1)) / (1 - 2 * rho)
-
-        m,_,r,_ = self.ratio
-        tau = self.compute_tau_Imola(r, m, n, rho, 1, self.type)  # 根据 r 计算 tau
-        tau_lap = self.compute_tau_lap_Imola(r, m, n, rho, eps_d, delta, self.type)
-        # 计算 |r_10 - r_01|
-        diff = torch.abs(r_01 - rho * (1 - rho) * (n - 1))
-
-        if tau is None:  # 首次运行时不进行一致性检查
-            valid_indices = torch.ones(n, dtype=torch.bool, device=perturbed_data.device)
-            invalid_indices = torch.zeros(n, dtype=torch.bool, device=perturbed_data.device)
-        else:
-            # 满足一致性检查的节点
-            valid_indices = (diff <= tau) & (torch.abs(est_degrees-perturbed_degree) <= tau_lap)
-            invalid_indices = (diff > tau) | (torch.abs(est_degrees-perturbed_degree) > tau_lap)
-
-        # 对于不一致的节点，返回 NaN
-        est_degrees[invalid_indices] = float('nan')
-        est_degrees_full[~rows_to_remove] = perturbed_degree
-        valid_indices_full[~rows_to_remove] = valid_indices
-        invalid_indices_full[~rows_to_remove] = invalid_indices
-
-        return est_degrees_full, valid_indices_full, invalid_indices_full
-
-    def compute_estimated_degrees_Imola(self, perturbed_data, rho):
-        """
-        使用向量化优化估计度数的计算。
-        :param perturbed_data: 扰动后的邻接矩阵 (torch.Tensor)
-        :param rho: 隐私参数相关值
-        :param tau: 阈值
-        :return: 估计的度数列表
-        """
-        n = perturbed_data.shape[0]  # 矩阵大小
-
-        # 使用矩阵运算计算 r_11、r_01 和 r_10
-        r_11 = torch.sum(perturbed_data * perturbed_data.T, dim=1)
-        r_01 = torch.sum((1 - perturbed_data) * perturbed_data.T, dim=1)
-        # r_10 = torch.sum(perturbed_data * (1 - perturbed_data.T), dim=1)
-
-        diff = torch.abs(r_01 - rho * (1 - rho) * (n - 1))
-        m_ratio, _, r, _ = self.ratio
-        m = n*m_ratio
-        tau = self.compute_tau_Imola(r, m, n, rho, 1, self.type)
-        # 初始化估计度数列表
-        est_degrees = torch.empty(n, dtype=torch.float32, device=perturbed_data.device)
-
-        # 满足一致性检查的节点
-        valid_indices = diff <= tau
-        invalid_indices = diff > tau
-
-        # 计算符合条件的估计度数
-        est_degrees[valid_indices] = (r_11[valid_indices] - rho ** 2 * (n - 1)) / (1 - 2 * rho)
-
-        # 对于不一致的节点，返回 None（在 PyTorch 中可用 NaN 表示）
-        est_degrees[invalid_indices] = float('nan')
-
-        return est_degrees, valid_indices, invalid_indices
     def compute_tau(self, r, n, rho, delta, attack_type):
         """
         计算阈值 tau。
@@ -310,75 +129,6 @@ class Poison_Aggregate:
         else:
             raise ValueError("Unsupported attack type! Use 'input' or 'response'.")
         return tau
-
-    def compute_tau_t(self, r, m, n, rho, delta, attack_type="input"):
-        """
-        计算阈值 tau。
-        :param m: 恶意用户数量
-        :param n: 总用户数量
-        :param rho: 隐私参数
-        :param delta: 控制误差范围的参数
-        :param attack_type: 攻击类型，"input" 或 "output"
-        :return: 计算得到的阈值 tau
-        """
-        if attack_type == "input":
-            tau = 0.03
-            # tau = n*r*(2*rho-1)**2/2
-        elif attack_type == "output":
-            tau = 0.1
-        else:
-            raise ValueError("Unsupported attack type! Use 'input' or 'response'.")
-        return tau
-
-    def deg_rr_check_t(self, perturbed_data):
-        """
-        主函数：先进行度数估计，计算最大度数 d_m，并动态调整 r 和 \tau，
-        直至没有超过阈值的节点。
-
-        :param eps: 隐私预算 epsilon
-        :param delta: 检测的失败概率
-        :return: 最终的估计度数列表
-        """
-        rho = 1 / (1 + np.exp(self.epsilon))  # 计算隐私参数 rho
-
-        est_degrees, valid_indices, invalid_indices = self.compute_estimated_degrees_t(perturbed_data, rho)
-
-        # print("迭代完成，所有节点均满足一致性检查。")
-        return est_degrees, valid_indices, invalid_indices
-
-    def compute_estimated_degrees_t(self, perturbed_data, rho):
-        """
-        使用向量化优化估计度数的计算。
-        :param perturbed_data: 扰动后的邻接矩阵 (torch.Tensor)
-        :param rho: 隐私参数相关值
-        :param tau: 阈值
-        :return: 估计的度数列表
-        """
-        n = perturbed_data.shape[0]  # 矩阵大小
-
-        # 使用矩阵运算计算 r_11、r_01 和 r_10
-        r_11 = torch.sum(perturbed_data * perturbed_data.T, dim=1)
-        r_01 = torch.sum((1 - perturbed_data) * perturbed_data.T, dim=1)
-        r_10 = torch.sum(perturbed_data * (1 - perturbed_data.T), dim=1)
-
-        diff = torch.abs((r_01+r_10)/(n-1) - 2*rho * (1 - rho))
-        m_ratio, _, r, _ = self.ratio
-        m = n*m_ratio
-        tau = self.compute_tau_t(r, m, n, rho, 1, self.type)
-        # 初始化估计度数列表
-        est_degrees = torch.empty(n, dtype=torch.float32, device=perturbed_data.device)
-
-        # 满足一致性检查的节点
-        valid_indices = diff <= tau
-        invalid_indices = diff > tau
-
-        # 计算符合条件的估计度数
-        est_degrees[valid_indices] = (r_11[valid_indices] - rho**2 * (n)) / (1 - 2 * rho)
-
-        # 对于不一致的节点，返回 None（在 PyTorch 中可用 NaN 表示）
-        est_degrees[invalid_indices] = float('nan')
-
-        return est_degrees, valid_indices, invalid_indices
 
     # self.deg_rr_check(perturbed_data, num_malicious)
     def deg_rr_check(self, perturbed_data):
@@ -675,6 +425,7 @@ class Poison_Aggregate:
         # 最大误差计算
         honest_errors = np.abs(est_degrees[honest_mask] - real_degrees[honest_mask])
         max_honest_error = np.nanmax(honest_errors) if len(honest_errors) > 0 else None
+        mae = np.nanmean(honest_errors) if len(honest_errors) > 0 else None
 
         malicious_errors = np.abs(est_degrees[malicious_mask] - real_degrees[malicious_mask])
         max_malicious_error = np.nanmax(malicious_errors) if len(malicious_errors) > 0 else None
@@ -709,6 +460,7 @@ class Poison_Aggregate:
         )
 
         # print("evaluate")
+        # return mae, max_malicious_error, fnr, fpr, precision, recall, f1_score
         return max_honest_error, max_malicious_error, fnr, fpr, precision, recall, f1_score
 
 
